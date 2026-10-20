@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
@@ -18,10 +18,9 @@ class ProjetoDB(Base):
     nome = Column(String, index=True)
     tecnologia = Column(String)
 
-# Cria as tabelas no banco de dados automaticamente
 Base.metadata.create_all(bind=engine)
 
-# Modelo Pydantic para validação de dados recebidos na API
+# Modelo Pydantic para validação
 class ProjetoSchema(BaseModel):
     nome: str
     tecnologia: str
@@ -31,7 +30,6 @@ class ProjetoSchema(BaseModel):
 
 app = FastAPI()
 
-# Função para obter a conexão com o banco de dados
 def get_db():
     db = SessionLocal()
     try:
@@ -41,19 +39,45 @@ def get_db():
 
 @app.get("/")
 def home():
-    return {"mensagem": "API de Portfólio conectada ao Banco de Dados SQL!"}
+    return {"mensagem": "API de Portfólio completa com CRUD e Banco de Dados SQL!"}
 
-# Rota GET: Busca todos os projetos salvos no Banco de Dados
+# 1. READ (Buscar todos)
 @app.get("/projetos")
 def listar_projetos(db: Session = Depends(get_db)):
-    projetos = db.query(ProjetoDB).all()
-    return projetos
+    return db.query(ProjetoDB).all()
 
-# Rota POST: Salva um novo projeto permanentemente no Banco de Dados
+# 2. CREATE (Cadastrar)
 @app.post("/projetos")
 def cadastrar_projeto(projeto: ProjetoSchema, db: Session = Depends(get_db)):
     novo_projeto = ProjetoDB(nome=projeto.nome, tecnologia=projeto.tecnologia)
     db.add(novo_projeto)
     db.commit()
     db.refresh(novo_projeto)
-    return {"mensagem": "Projeto salvo no banco de dados com sucesso!", "projeto": novo_projeto}
+    return {"mensagem": "Projeto salvo com sucesso!", "projeto": novo_projeto}
+
+# 3. UPDATE (Atualizar por ID)
+@app.put("/projetos/{projeto_id}")
+def atualizar_projeto(projeto_id: int, dados_atualizados: ProjetoSchema, db: Session = Depends(get_db)):
+    projeto_existente = db.query(ProjetoDB).filter(ProjetoDB.id == projeto_id).first()
+    
+    if not projeto_existente:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+
+    projeto_existente.nome = dados_atualizados.nome
+    projeto_existente.tecnologia = dados_atualizados.tecnologia
+    
+    db.commit()
+    db.refresh(projeto_existente)
+    return {"mensagem": "Projeto atualizado com sucesso!", "projeto": projeto_existente}
+
+# 4. DELETE (Remover por ID)
+@app.delete("/projetos/{projeto_id}")
+def deletar_projeto(projeto_id: int, db: Session = Depends(get_db)):
+    projeto_existente = db.query(ProjetoDB).filter(ProjetoDB.id == projeto_id).first()
+    
+    if not projeto_existente:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+
+    db.delete(projeto_existente)
+    db.commit()
+    return {"mensagem": f"Projeto ID {projeto_id} removido com sucesso!"}
